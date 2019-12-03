@@ -42,9 +42,25 @@ handle_sigint(int signo) {
 
 static void
 execute(char *command) {
+    char *tokens[MAX_TOKENS];
+    char *token;
+    size_t len, i;
+
+    token = strtok(command, COMMAND_DELIMS);
+    for (len = 0; token != NULL; ++len) {
+        tokens[len] = token;
+        token = strtok(NULL, COMMAND_DELIMS);
+    }
+
+    if (f_tracing_mode) {
+        (void)fprintf(stderr, "+");
+        for (i = 0; i < len; ++i) {
+            (void)fprintf(stderr, " %s", tokens[i]);
+        }
+        (void)fprintf(stderr, "\n");
+    }
 
     // TODO: call builtin or fork(2) and exec(3) command
-    UNUSED(command);
 }
 
 static char *
@@ -57,19 +73,10 @@ prompt(char *buffer, size_t buffer_size) {
 static void
 interpret(void) {
     char input[BUFSIZ];
-    char *tokens[MAX_TOKENS];
-    char *token;
-    size_t len;
 
     while (prompt(input, sizeof(input)) != NULL) {
         input[strlen(input) - 1] = '\0'; // overwrite newline character
-        token = strtok(input, COMMAND_DELIMS);
-        for (len = 0; token != NULL; ++len) {
-            tokens[len] = token;
-            token = strtok(NULL, COMMAND_DELIMS);
-        }
-
-        UNUSED(tokens); // temporary: to ignore unused warnings
+        execute(input);
     }
 }
 
