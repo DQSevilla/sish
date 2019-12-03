@@ -3,32 +3,54 @@
 #endif
 
 #include <err.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
+#define UNUSED(x) (void)(x)
 #define MAX_TOKENS 256 // TODO: research system limits
 #define COMMAND_DELIMS " \t"
 
 int f_tracing_mode;
 
-int main(int, char *[]);
+static void print_prompt(void);
+static void handle_sigint(int);
 static char *prompt(char *, size_t);
 static void execute(char *);
 static void interpret(void);
+int main(int, char *[]);
+
+static void
+print_prompt(void) {
+
+    (void)printf("%s$ ", getprogname());
+}
+
+static void
+handle_sigint(int signo) {
+
+    UNUSED(signo); // ignore unused parameter warning
+
+    (void)printf("\n");
+    print_prompt();
+    if (fflush(stdout) == EOF) {
+        err(EXIT_FAILURE, "fflush");
+    }
+    // TODO: properly set return code for $?. (130 on most shells)
+}
 
 static void
 execute(char *command) {
 
     // TODO: call builtin or fork(2) and exec(3) command
-    // to avoid unused variable warnings:
-    (void)printf("executing %s\n", command);
+    UNUSED(command);
 }
 
 static char *
 prompt(char *buffer, size_t buffer_size) {
 
-    (void)printf("%s$ ", getprogname());
+    print_prompt();
     return fgets(buffer, buffer_size, stdin);
 }
 
@@ -47,12 +69,7 @@ interpret(void) {
             token = strtok(NULL, COMMAND_DELIMS);
         }
 
-        /* test tokenizing */
-        (void)printf("received input:");
-        for (size_t i = 0; i < len; ++i) {
-            (void)printf(" %s", tokens[i]);
-        }
-        (void)printf("\n");
+        UNUSED(tokens); // temporary: to ignore unused warnings
     }
 }
 
@@ -62,8 +79,12 @@ main(int argc, char *argv[]) {
     char opt;
 
     setprogname(argv[0]);
-    command = NULL;
 
+    if (signal(SIGINT, handle_sigint) == SIG_ERR) {
+        err(EXIT_FAILURE, "signal error");
+    }
+
+    command = NULL;
     while ((opt = getopt(argc, argv, "xc:")) != -1) {
         switch (opt) {
         case 'x':
