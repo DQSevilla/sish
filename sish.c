@@ -7,6 +7,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#define MAX_TOKENS 256 // TODO: research system limits
+#define COMMAND_DELIMS " \t"
+
 int f_tracing_mode;
 
 int main(int, char *[]);
@@ -32,9 +35,24 @@ prompt(char *buffer, size_t buffer_size) {
 static void
 interpret(void) {
     char input[BUFSIZ];
+    char *tokens[MAX_TOKENS];
+    char *token;
+    size_t len;
 
     while (prompt(input, sizeof(input)) != NULL) {
         input[strlen(input) - 1] = '\0'; // overwrite newline character
+        token = strtok(input, COMMAND_DELIMS);
+        for (len = 0; token != NULL; ++len) {
+            tokens[len] = token;
+            token = strtok(NULL, COMMAND_DELIMS);
+        }
+
+        /* test tokenizing */
+        (void)printf("received input:");
+        for (size_t i = 0; i < len; ++i) {
+            (void)printf(" %s", tokens[i]);
+        }
+        (void)printf("\n");
     }
 }
 
