@@ -1,3 +1,8 @@
 [CS 631] Final Assignment - Write a Simple Shell (sish)
 David Sevilla
 
+Considerations:
+- Extra arguments are ignored. Note that sh(1) has similar behavior when run
+  with the -c option. For example, the following invocations ignore "foo":
+  e.g. `sish foo`, `sish -x foo -c bar`, `sish -c bar foo`
+
