@@ -3,14 +3,18 @@
 #endif
 
 #include <err.h>
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 #include "builtins.h"
 
 #define UNUSED(x) (void)(x)
+#define ERR_NOT_EXECUTED 127
 #define MAX_TOKENS 256 // TODO: research system limits
 #define COMMAND_DELIMS " \t"
 
@@ -20,6 +24,7 @@ int retcode;
 static void print_prompt(void);
 static void handle_sigint(int);
 static char *prompt(char *, size_t);
+static void run_command(char **, size_t);
 static void execute(char *);
 static void interpret(void);
 int main(int, char *[]);
@@ -40,20 +45,57 @@ handle_sigint(int signo) {
     if (fflush(stdout) == EOF) {
         err(EXIT_FAILURE, "fflush");
     }
-    // TODO: properly set return code for $?. (130 on most shells)
+}
+
+// precondition: cmdvect has len strings and is NULL terminated
+static void run_command(char **cmdvect, size_t len) {
+    size_t size;
+    int wstatus;
+
+    size = strlen(cmdvect[0]);
+
+    if (strncmp(cmdvect[0], "cd", size) == 0) {
+        retcode = cd(len, cmdvect);
+    } else if (strncmp(cmdvect[0], "echo", size) == 0) {
+        retcode = echo(len, cmdvect, retcode);
+    } else if (strncmp(cmdvect[0], "exit", size) == 0) {
+        exit(retcode);
+    } else {
+        switch (fork()) {
+        case -1:
+            err(EXIT_FAILURE, "fork");
+        case 0:
+            (void)execvp(cmdvect[0], cmdvect);
+            if (errno == ENOENT) {
+                (void)fprintf(stderr, "%s: command not found\n", cmdvect[0]);
+                exit(ERR_NOT_EXECUTED);
+            } else {
+                err(ERR_NOT_EXECUTED, "execvp");
+            }
+        default:
+            do {
+                if (wait(&wstatus) == -1) {
+                    err(EXIT_FAILURE, "wait");
+                }
+            } while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
+            retcode = WEXITSTATUS(wstatus);
+        }
+    }
 }
 
 static void
 execute(char *command) {
     char *tokens[MAX_TOKENS];
     char *token;
-    size_t len, i, size;
+    size_t len, i;
 
+    /* vectorize command string */
     token = strtok(command, COMMAND_DELIMS);
     for (len = 0; token != NULL; ++len) {
         tokens[len] = token;
         token = strtok(NULL, COMMAND_DELIMS);
     }
+    tokens[len] = NULL; // execvp expects NULL terminated vector
 
     if (len == 0) {
         return;
@@ -67,17 +109,7 @@ execute(char *command) {
         (void)fprintf(stderr, "\n");
     }
 
-    size = strlen(tokens[0]);
-
-    if (strncmp(tokens[0], "cd", size) == 0) {
-        retcode = cd(len, tokens);
-    } else if (strncmp(tokens[0], "echo", size) == 0) {
-        retcode = echo(len, tokens, retcode);
-    } else if (strncmp(tokens[0], "exit", size) == 0) {
-        exit(retcode);
-    } else {
-        // TODO: call builtin or fork(2) and exec(3) command
-    }
+    run_command(tokens, len);
 }
 
 static char *
