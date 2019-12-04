@@ -8,11 +8,14 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "builtins.h"
+
 #define UNUSED(x) (void)(x)
 #define MAX_TOKENS 256 // TODO: research system limits
 #define COMMAND_DELIMS " \t"
 
 int f_tracing_mode;
+int retcode;
 
 static void print_prompt(void);
 static void handle_sigint(int);
@@ -44,12 +47,16 @@ static void
 execute(char *command) {
     char *tokens[MAX_TOKENS];
     char *token;
-    size_t len, i;
+    size_t len, i, size;
 
     token = strtok(command, COMMAND_DELIMS);
     for (len = 0; token != NULL; ++len) {
         tokens[len] = token;
         token = strtok(NULL, COMMAND_DELIMS);
+    }
+
+    if (len == 0) {
+        return;
     }
 
     if (f_tracing_mode) {
@@ -60,7 +67,17 @@ execute(char *command) {
         (void)fprintf(stderr, "\n");
     }
 
-    // TODO: call builtin or fork(2) and exec(3) command
+    size = strlen(tokens[0]);
+
+    if (strncmp(tokens[0], "cd", size) == 0) {
+        retcode = cd(len, tokens);
+    } else if (strncmp(tokens[0], "echo", size) == 0) {
+        retcode = echo(len, tokens);
+    } else if (strncmp(tokens[0], "exit", size) == 0) {
+        exit(retcode);
+    } else {
+        // TODO: call builtin or fork(2) and exec(3) command
+    }
 }
 
 static char *
@@ -113,4 +130,5 @@ main(int argc, char *argv[]) {
     }
 
     interpret();
+    return retcode;
 }

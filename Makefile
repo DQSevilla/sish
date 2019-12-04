@@ -1,5 +1,5 @@
 PROG := sish
-# OBJS := 
+OBJS := builtins.o
 CFLAGS := -g -Wall -Werror -Wextra -Wformat=2 -Wjump-misses-init \
 	-Wlogical-op -Wpedantic -Wshadow
 
@@ -9,11 +9,11 @@ EXTRA_LDFLAGS := $$(if [ x"${UNAME}" = x"Linux" ]; then echo "-lbsd"; fi)
 
 all: $(PROG)
 
-$(PROG):
-	$(CC) $(CFLAGS) $(EXTRA_LDFLAGS) $@.c -o $@
+$(PROG): $(OBJS)
+	$(CC) $(CFLAGS) $(EXTRA_LDFLAGS) $(OBJS) $@.c -o $@
 
 clean:
-	rm -f $(PROG)
+	rm -f $(PROG) $(OBJS)
 
 re: clean all
 
