@@ -72,7 +72,7 @@ execute(char *command) {
     if (strncmp(tokens[0], "cd", size) == 0) {
         retcode = cd(len, tokens);
     } else if (strncmp(tokens[0], "echo", size) == 0) {
-        retcode = echo(len, tokens);
+        retcode = echo(len, tokens, retcode);
     } else if (strncmp(tokens[0], "exit", size) == 0) {
         exit(retcode);
     } else {

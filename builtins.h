@@ -3,6 +3,6 @@
 
 int cd(size_t, char **);
 
-int echo(size_t, char **);
+int echo(size_t, char **, int);
 
 #endif /* !_BUILTINS_H_ */

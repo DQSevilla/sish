@@ -3,9 +3,12 @@
 #include<pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "builtins.h"
+
+static void echo_handler(char *, int);
 
 // precondtion: argc > 0
 int
@@ -36,15 +39,28 @@ cd(size_t argc, char **argv) {
     return EXIT_SUCCESS;
 }
 
+static void
+echo_handler(char *str, int retcode) {
+
+    if (strncmp(str, "$?", strlen(str)) == 0) {
+        (void)printf("%d", retcode);
+    } else if (strncmp(str, "$$", strlen(str)) == 0) {
+        (void)printf("%d", getpid());
+    } else {
+        (void)printf("%s", str);
+    }
+}
+
 // precondition: argc > 0
 int
-echo(size_t argc, char **argv) {
+echo(size_t argc, char **argv, int retcode) {
     size_t i;
 
     if (argc > 1) {
-        (void)printf("%s", argv[1]);
+        echo_handler(argv[1], retcode);
         for (i = 2; i < argc; ++i) {
-            (void)printf(" %s", argv[i]);
+            (void)printf(" ");
+            echo_handler(argv[i], retcode);
         }
     }
 
