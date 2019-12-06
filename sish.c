@@ -19,12 +19,15 @@
 #define MAX_TOKENS 256 // TODO: research system limits
 #define COMMAND_DELIMS " \t"
 
+#define TRUE 1
+#define FALSE 0
+
 int f_tracing_mode;
 int retcode;
+int is_executing; // whether sish is executing a command
 
 static void print_prompt(void);
 static void handle_sigint(int);
-static void handle_sigint_execute(int);
 static char *prompt(char *, size_t);
 static void run_command(char **, size_t);
 static void execute(char *);
@@ -43,22 +46,14 @@ handle_sigint(int signo) {
     UNUSED(signo); // ignore unused parameter warning
 
     (void)printf("\n");
-    print_prompt();
-    if (fflush(stdout) == EOF) {
-        err(EXIT_FAILURE, "fflush");
+    retcode = ERR_SIGINT;
+
+    if (!is_executing) {
+        print_prompt();
+        if (fflush(stdout) == EOF) {
+            err(EXIT_FAILURE, "fflush");
+        }
     }
-    retcode = ERR_SIGINT;
-}
-
-/* Avoids re-printing the prompt string, useful for when SIGINT is received
- * while a child process is currently executing.
- */
-static void
-handle_sigint_execute(int signo) {
-
-    UNUSED(signo); // ignore unused parameter warning
-    retcode = ERR_SIGINT;
-    (void)printf("\n");
 }
 
 // precondition: cmdvect has len strings and is NULL terminated
@@ -70,43 +65,43 @@ static void run_command(char **cmdvect, size_t len) {
 
     if (strncmp(cmdvect[0], "cd", size) == 0) {
         retcode = cd(len, cmdvect);
+        return;
     } else if (strncmp(cmdvect[0], "echo", size) == 0) {
         retcode = echo(len, cmdvect, retcode);
+        return;
     } else if (strncmp(cmdvect[0], "exit", size) == 0) {
         exit(retcode);
-    } else {
-        switch (fork()) {
-        case -1:
-            err(EXIT_FAILURE, "fork");
-        case 0:
-            (void)execvp(cmdvect[0], cmdvect);
-            if (errno == ENOENT) {
-                (void)fprintf(stderr, "%s: command not found\n", cmdvect[0]);
-                exit(ERR_NOT_EXECUTED);
-            } else {
-                err(ERR_NOT_EXECUTED, "execvp");
+    }
+
+    switch (fork()) {
+    case -1:
+        err(EXIT_FAILURE, "fork");
+    case 0:
+        is_executing = TRUE;
+        (void)execvp(cmdvect[0], cmdvect);
+        if (errno == ENOENT) {
+            (void)fprintf(stderr, "%s: command not found\n", cmdvect[0]);
+            exit(ERR_NOT_EXECUTED);
+        } else {
+            err(ERR_NOT_EXECUTED, "execvp");
+        }
+    default:
+        /* toggle is_executing to change signal handler behavior */
+        is_executing = TRUE;
+        for (;;) {
+            if (wait(&wstatus) == -1) {
+                err(EXIT_FAILURE, "wait");
             }
-        default:
-            if (signal(SIGINT, handle_sigint_execute) == SIG_ERR) {
-                err(EXIT_FAILURE, "signal");
+            if (WIFSIGNALED(wstatus)) {
+                retcode = ERR_SIGINT;
+                break;
             }
-            for (;;) {
-                if (wait(&wstatus) == -1) {
-                    err(EXIT_FAILURE, "wait");
-                }
-                if (WIFSIGNALED(wstatus)) {
-                    retcode = ERR_SIGINT;
-                    break;
-                }
-                if (WIFEXITED(wstatus)) {
-                    retcode = WEXITSTATUS(wstatus);
-                    break;
-                }
-            }
-            if (signal(SIGINT, handle_sigint) == SIG_ERR) {
-                err(EXIT_FAILURE, "signal");
+            if (WIFEXITED(wstatus)) {
+                retcode = WEXITSTATUS(wstatus);
+                break;
             }
         }
+        is_executing = FALSE;
     }
 }
 
