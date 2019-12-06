@@ -15,6 +15,7 @@
 
 #define UNUSED(x) (void)(x)
 #define ERR_NOT_EXECUTED 127
+#define ERR_SIGINT 130 // mimic behavior of sh(1)
 #define MAX_TOKENS 256 // TODO: research system limits
 #define COMMAND_DELIMS " \t"
 
@@ -23,6 +24,7 @@ int retcode;
 
 static void print_prompt(void);
 static void handle_sigint(int);
+static void handle_sigint_execute(int);
 static char *prompt(char *, size_t);
 static void run_command(char **, size_t);
 static void execute(char *);
@@ -45,6 +47,18 @@ handle_sigint(int signo) {
     if (fflush(stdout) == EOF) {
         err(EXIT_FAILURE, "fflush");
     }
+    retcode = ERR_SIGINT;
+}
+
+/* Avoids re-printing the prompt string, useful for when SIGINT is received
+ * while a child process is currently executing.
+ */
+static void
+handle_sigint_execute(int signo) {
+
+    UNUSED(signo); // ignore unused parameter warning
+    retcode = ERR_SIGINT;
+    (void)printf("\n");
 }
 
 // precondition: cmdvect has len strings and is NULL terminated
@@ -73,12 +87,25 @@ static void run_command(char **cmdvect, size_t len) {
                 err(ERR_NOT_EXECUTED, "execvp");
             }
         default:
-            do {
+            if (signal(SIGINT, handle_sigint_execute) == SIG_ERR) {
+                err(EXIT_FAILURE, "signal");
+            }
+            for (;;) {
                 if (wait(&wstatus) == -1) {
                     err(EXIT_FAILURE, "wait");
                 }
-            } while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
-            retcode = WEXITSTATUS(wstatus);
+                if (WIFSIGNALED(wstatus)) {
+                    retcode = ERR_SIGINT;
+                    break;
+                }
+                if (WIFEXITED(wstatus)) {
+                    retcode = WEXITSTATUS(wstatus);
+                    break;
+                }
+            }
+            if (signal(SIGINT, handle_sigint) == SIG_ERR) {
+                err(EXIT_FAILURE, "signal");
+            }
         }
     }
 }
