@@ -56,8 +56,9 @@ handle_sigint(int signo) {
     }
 }
 
-// precondition: cmdvect has len strings and is NULL terminated
-static void run_command(char **cmdvect, size_t len) {
+/* precondition: cmdvect has len strings and is NULL terminated */
+static void
+run_command(char **cmdvect, size_t len) {
     size_t size;
     int wstatus;
 
