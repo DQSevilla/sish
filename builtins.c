@@ -41,10 +41,12 @@ cd(size_t argc, char **argv) {
 
 static void
 echo_handler(char *str, int retcode) {
+    size_t len;
 
-    if (strncmp(str, "$?", strlen(str)) == 0) {
+    len = strlen(str);
+    if (strncmp(str, "$?", len) == 0) {
         (void)printf("%d", retcode);
-    } else if (strncmp(str, "$$", strlen(str)) == 0) {
+    } else if (strncmp(str, "$$", len) == 0) {
         (void)printf("%d", getpid());
     } else {
         (void)printf("%s", str);
