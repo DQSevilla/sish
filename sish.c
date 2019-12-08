@@ -152,10 +152,20 @@ interpret(void) {
 
 int
 main(int argc, char *argv[]) {
-    char *command;
+    char *command, *path;
     char opt;
 
     setprogname(argv[0]);
+
+    if ((path = realpath(getprogname(), NULL)) == NULL) {
+        err(EXIT_FAILURE, "realpath");
+    }
+
+    if (setenv("SHELL", path, TRUE) == -1) {
+        err(EXIT_FAILURE, "setenv");
+    }
+
+    free(path);
 
     if (signal(SIGINT, handle_sigint) == SIG_ERR) {
         err(EXIT_FAILURE, "signal error");
