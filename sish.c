@@ -72,11 +72,11 @@ run_command(char **cmdvect, size_t len) {
         exit(retcode);
     }
 
+    is_executing = TRUE; /* toggle signal handler behavior */
     switch (fork()) {
     case -1:
         err(EXIT_FAILURE, "fork");
     case 0:
-        is_executing = TRUE;
         (void)execvp(cmdvect[0], cmdvect);
         if (errno == ENOENT) {
             (void)fprintf(stderr, "%s: command not found\n", cmdvect[0]);
@@ -85,8 +85,6 @@ run_command(char **cmdvect, size_t len) {
             err(ERR_NOT_EXECUTED, "execvp");
         }
     default:
-        /* toggle is_executing to change signal handler behavior */
-        is_executing = TRUE;
         for (;;) {
             if (wait(&wstatus) == -1) {
                 err(EXIT_FAILURE, "wait");
