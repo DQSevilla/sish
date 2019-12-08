@@ -15,7 +15,6 @@
 
 #define UNUSED(x) (void)(x)
 #define ERR_NOT_EXECUTED 127
-#define ERR_SIGINT 130 // mimic behavior of sh(1)
 #define MAX_TOKENS 256 // TODO: research system limits
 #define COMMAND_DELIMS " \t"
 
@@ -46,7 +45,6 @@ handle_sigint(int signo) {
     UNUSED(signo); // ignore unused parameter warning
 
     (void)printf("\n");
-    retcode = ERR_SIGINT;
 
     if (!is_executing) {
         print_prompt();
@@ -94,7 +92,7 @@ run_command(char **cmdvect, size_t len) {
                 err(EXIT_FAILURE, "wait");
             }
             if (WIFSIGNALED(wstatus)) {
-                retcode = ERR_SIGINT;
+                retcode = ERR_NOT_EXECUTED;
                 break;
             }
             if (WIFEXITED(wstatus)) {
