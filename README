@@ -11,3 +11,19 @@ Considerations:
   with the -c option. For example, the following invocations ignore "foo":
   e.g. `sish foo`, `sish -x foo -c bar`, `sish -c bar foo`
 
+Additional tests considered:
+sish$ ^C
+  - Prints newline and prompt string
+sish$ yes
+  - Follow by ^C to test whether prompt string is printed properly
+    (requires changing signal handler behavior)
+sish$ cat <file >file
+  - Truncates file, similar to sh(1)
+sish$ echo foo >bar >baz >boing
+  - Creates / truncates bar and baz files, and only writes "foo" to boing,
+    similar to sh(1)
+sish$ ^D
+  - Write EOF to buffer, terminating the shell, like sh(1)
+sish$ cat <<file >>>file
+  - Yields a command parsing error, but still prints full command under tracing
+    mode
