@@ -143,7 +143,7 @@ execute(char *command) {
 
         if (strnstr(token, ">>>", toklen) != NULL ||
             strnstr(token, "<<", toklen) != NULL) {
-            (void)fprintf(stderr, "parse error: invalid combination of"
+            (void)fprintf(stderr, "parse error: invalid combination of "
                 "redirection operators\n");
             return;
         }
@@ -183,7 +183,6 @@ execute(char *command) {
 
     len = curr;
     cmd[len] = NULL;
-    printf("%d %d\n", outfd, infd);
     run_command(cmd, len, outfd, infd);
 }
 static char *
