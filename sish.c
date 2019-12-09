@@ -116,21 +116,35 @@ run_command(char **cmdvect, size_t len, int outfd, int infd) {
 
 static void
 execute(char *command) {
-    char *tokens[MAX_TOKENS];
+    char *tokens[MAX_TOKENS], *cmd[MAX_TOKENS];
     char *token, *path;
-    size_t i, len, toklen;
+    size_t i, len, curr, toklen;
     int outfd, infd, open_flags;
 
-    len = 0;
-    outfd = infd = -1;
+    if (f_tracing_mode) {
+        (void)fprintf(stderr, "+");
+    }
     token = strtok(command, COMMAND_DELIMS);
+    for (len = 0; token != NULL; ++len) {
+        if (f_tracing_mode) {
+            (void)fprintf(stderr, " %s", token);
+        }
+        tokens[len] = token;
+        token = strtok(NULL, COMMAND_DELIMS);
+    }
+    if (f_tracing_mode) {
+        (void)fprintf(stderr, "\n");
+    }
 
-    while (token != NULL) {
+    outfd = infd = -1;
+    for (i = 0, curr = 0; i < len; ++i) {
+        token = tokens[i];
         toklen = strlen(token);
+
         if (strnstr(token, ">>>", toklen) != NULL ||
             strnstr(token, "<<", toklen) != NULL) {
             (void)fprintf(stderr, "parse error: invalid combination of"
-                "redirection operators");
+                "redirection operators\n");
             return;
         }
 
@@ -147,39 +161,30 @@ execute(char *command) {
                 perror("open");
                 return;
             }
-            token = strtok(NULL, COMMAND_DELIMS);
             continue;
         }
+
         if (path != NULL) {
             (void)close(outfd);
-            printf("here\n");
             if ((outfd = open(path, open_flags,
                 S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
                 perror("open");
                 return;
             }
-            token = strtok(NULL, COMMAND_DELIMS);
             continue;
         }
 
-        tokens[len++] = token;
-        token = strtok(NULL, COMMAND_DELIMS);
+        cmd[curr++] = token;
     }
 
-    tokens[len] = NULL;
-    if (len == 0) {
+    if (curr == 0) {
         return;
     }
 
-    if (f_tracing_mode) {
-        (void)fprintf(stderr, "+");
-        for (i = 0; i < len; ++i) {
-            (void)fprintf(stderr, " %s", tokens[i]);
-        }
-        (void)fprintf(stderr, "\n");
-    }
-
-    run_command(tokens, len, outfd, infd);
+    len = curr;
+    cmd[len] = NULL;
+    printf("%d %d\n", outfd, infd);
+    run_command(cmd, len, outfd, infd);
 }
 static char *
 prompt(char *buffer, size_t buffer_size) {
