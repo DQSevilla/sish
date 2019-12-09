@@ -8,6 +8,7 @@
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -204,20 +205,19 @@ interpret(void) {
 
 int
 main(int argc, char *argv[]) {
-    char *command, *path;
+    char progpath[PATH_MAX + 1];
+    char *command;
     char opt;
 
     setprogname(argv[0]);
 
-    if ((path = realpath(getprogname(), NULL)) == NULL) {
+    if (realpath(getprogname(), progpath) == NULL) {
         err(EXIT_FAILURE, "realpath");
     }
 
-    if (setenv("SHELL", path, TRUE) == -1) {
+    if (setenv("SHELL", progpath, TRUE) == -1) {
         err(EXIT_FAILURE, "setenv");
     }
-
-    free(path);
 
     if (signal(SIGINT, handle_sigint) == SIG_ERR) {
         err(EXIT_FAILURE, "signal error");
@@ -239,11 +239,11 @@ main(int argc, char *argv[]) {
         }
     }
 
-    if (command != NULL) {
+    if (command == NULL) {
+        interpret();
+    } else {
         execute(command);
-        return retcode;
     }
 
-    interpret();
     return retcode;
 }
