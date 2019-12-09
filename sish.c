@@ -1,9 +1,13 @@
 #ifdef __linux__
 #include <bsd/stdlib.h>
+#include <bsd/string.h>
 #endif
+
+#include <sys/stat.h>
 
 #include <err.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,7 +32,7 @@ int is_executing; // whether sish is executing a command
 static void print_prompt(void);
 static void handle_sigint(int);
 static char *prompt(char *, size_t);
-static void run_command(char **, size_t);
+static void run_command(char **, size_t, int, int);
 static void execute(char *);
 static void interpret(void);
 int main(int, char *[]);
@@ -56,27 +60,33 @@ handle_sigint(int signo) {
 
 /* precondition: cmdvect has len strings and is NULL terminated */
 static void
-run_command(char **cmdvect, size_t len) {
+run_command(char **cmdvect, size_t len, int outfd, int infd) {
     size_t size;
     int wstatus;
 
-    size = strlen(cmdvect[0]);
-
-    if (strncmp(cmdvect[0], "cd", size) == 0) {
-        retcode = cd(len, cmdvect);
-        return;
-    } else if (strncmp(cmdvect[0], "echo", size) == 0) {
-        retcode = echo(len, cmdvect, retcode);
-        return;
-    } else if (strncmp(cmdvect[0], "exit", size) == 0) {
+    is_executing = TRUE; /* toggle signal handler behavior */
+    if (strncmp(cmdvect[0], "exit", strlen(cmdvect[0])) == 0) {
         exit(retcode);
     }
 
-    is_executing = TRUE; /* toggle signal handler behavior */
     switch (fork()) {
     case -1:
         err(EXIT_FAILURE, "fork");
     case 0:
+        if (outfd != -1 && dup2(outfd, STDOUT_FILENO) != STDOUT_FILENO) {
+            err(EXIT_FAILURE, "could not redirect standard output: dup2");
+        }
+        if (infd != -1 && dup2(infd, STDIN_FILENO) != STDIN_FILENO) {
+            err(EXIT_FAILURE, "could not redirect standard input: dup2");
+        }
+
+        size = strlen(cmdvect[0]);
+        if (strncmp(cmdvect[0], "cd", size) == 0) {
+            exit(cd(len, cmdvect));
+        } else if (strncmp(cmdvect[0], "echo", size) == 0) {
+            exit(echo(len, cmdvect, retcode));
+        }
+
         (void)execvp(cmdvect[0], cmdvect);
         if (errno == ENOENT) {
             (void)fprintf(stderr, "%s: command not found\n", cmdvect[0]);
@@ -85,6 +95,8 @@ run_command(char **cmdvect, size_t len) {
             err(ERR_NOT_EXECUTED, "execvp");
         }
     default:
+        (void)close(outfd);
+        (void)close(infd);
         for (;;) {
             if (wait(&wstatus) == -1) {
                 err(EXIT_FAILURE, "wait");
@@ -105,17 +117,56 @@ run_command(char **cmdvect, size_t len) {
 static void
 execute(char *command) {
     char *tokens[MAX_TOKENS];
-    char *token;
-    size_t len, i;
+    char *token, *path;
+    size_t i, len, toklen;
+    int outfd, infd, open_flags;
 
-    /* vectorize command string */
+    len = 0;
+    outfd = infd = -1;
     token = strtok(command, COMMAND_DELIMS);
-    for (len = 0; token != NULL; ++len) {
-        tokens[len] = token;
+
+    while (token != NULL) {
+        toklen = strlen(token);
+        if (strnstr(token, ">>>", toklen) != NULL ||
+            strnstr(token, "<<", toklen) != NULL) {
+            (void)fprintf(stderr, "parse error: invalid combination of"
+                "redirection operators");
+            return;
+        }
+
+        path = NULL;
+        if (toklen > 2 && strncmp(token, ">>", 2) == 0) {
+            path = token + 2;
+            open_flags = O_WRONLY | O_CREAT | O_APPEND;
+        } else if (strncmp(token, ">", 1) == 0) {
+            path = token + 1;
+            open_flags = O_WRONLY | O_CREAT | O_TRUNC;
+        } else if (strncmp(token, "<", 1) == 0) {
+            (void)close(infd);
+            if ((infd = open(token + 1, O_RDONLY)) == -1) {
+                perror("open");
+                return;
+            }
+            token = strtok(NULL, COMMAND_DELIMS);
+            continue;
+        }
+        if (path != NULL) {
+            (void)close(outfd);
+            printf("here\n");
+            if ((outfd = open(path, open_flags,
+                S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
+                perror("open");
+                return;
+            }
+            token = strtok(NULL, COMMAND_DELIMS);
+            continue;
+        }
+
+        tokens[len++] = token;
         token = strtok(NULL, COMMAND_DELIMS);
     }
-    tokens[len] = NULL; // execvp expects NULL terminated vector
 
+    tokens[len] = NULL;
     if (len == 0) {
         return;
     }
@@ -128,9 +179,8 @@ execute(char *command) {
         (void)fprintf(stderr, "\n");
     }
 
-    run_command(tokens, len);
+    run_command(tokens, len, outfd, infd);
 }
-
 static char *
 prompt(char *buffer, size_t buffer_size) {
 
@@ -187,7 +237,7 @@ main(int argc, char *argv[]) {
 
     if (command != NULL) {
         execute(command);
-        return EXIT_SUCCESS;
+        return retcode;
     }
 
     interpret();

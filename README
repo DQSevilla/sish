@@ -1,6 +1,11 @@
 [CS 631] Final Assignment - Write a Simple Shell (sish)
 David Sevilla
 
+Known Bugs:
+- Redirection operators are only correctly parsed if they are not whitespace
+  separated from the corresponding filename. e.g. Only `echo foo >bar` works,
+  not `echo foo > bar`
+
 Considerations:
 - Extra arguments are ignored. Note that sh(1) has similar behavior when run
   with the -c option. For example, the following invocations ignore "foo":
