@@ -77,14 +77,17 @@ free_command(struct command *cmd) {
 /* precondition: cmd is initialized and cmd->cmd is NULL terminated */
 static void
 run_command(struct command *cmd) {
-    size_t size, len;
+    size_t size;
     int wstatus;
 
     is_executing = TRUE; // toggles signal handler behavior
     if (strncmp(cmd->cmd[0], "exit", strlen(cmd->cmd[0])) == 0) {
-        len = cmd->len;
+        if (cmd->len > 1) {
+            retcode = EXIT_FAILURE;
+            (void)fprintf(stderr, "exit: unknown paramters\n");
+        }
         free_command(cmd);
-        exit(len > 1 ? EXIT_FAILURE : retcode);
+        exit(retcode);
     }
 
     switch (fork()) {
@@ -109,8 +112,8 @@ run_command(struct command *cmd) {
 
         (void)execvp(cmd->cmd[0], cmd->cmd);
         free_command(cmd);
-        if (errno == ENOENT) {
-            errx(ERR_NOT_EXECUTED, "%s: command not found\n", cmd->cmd[0]);
+        if (errno == ENOENT || errno == EBADF) {
+            errx(ERR_NOT_EXECUTED, "%s: command not found", cmd->cmd[0]);
         } else {
             err(ERR_NOT_EXECUTED, "execvp");
         }
@@ -122,7 +125,6 @@ run_command(struct command *cmd) {
                 free(cmd);
                 err(EXIT_FAILURE, "wait");
             }
-
             if (WIFSIGNALED(wstatus)) {
                 retcode = ERR_NOT_EXECUTED;
                 break;
@@ -169,11 +171,14 @@ parse_command(char **tokens, size_t len) {
             open_flags = O_WRONLY | O_CREAT | O_TRUNC;
         } else if (strncmp(token, "<", 1) == 0) {
             (void)close(cmd->infd);
+            if (toklen > 2 && strncmp(token, "<>", 2) == 0) {
+                token++;
+            }
             if ((cmd->infd = open(token + 1, O_RDONLY)) == -1) {
                 perror("parsing command: open");
                 return NULL;
             }
-            continue; // TODO: don't continue if <> case
+            continue;
         }
 
         if (path != NULL) {
