@@ -12,15 +12,12 @@ NetBSD 8.x system?
 Did I provide a Makefile?
   - Yes.
 
-
 Did I provide a README to explain any problems or
 issues I encountered?
   - Yes.
 
-
 Did I check the return value of all function calls?
   - Yes.
-
 
 Did I send error messages to stderr?
   - Yes.
@@ -35,4 +32,3 @@ Did I make sure that my .h files only include function
 forward declarations, macros, etc., no function
 implementations or other code?
   - Yes.
-
