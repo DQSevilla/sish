@@ -26,6 +26,13 @@
 #define TRUE 1
 #define FALSE 0
 
+struct command {
+    char *cmd[MAX_TOKENS];
+    size_t len;
+    int infd;
+    int outfd;
+};
+
 int f_tracing_mode;
 int retcode;
 int is_executing; // whether sish is executing a command
@@ -33,7 +40,7 @@ int is_executing; // whether sish is executing a command
 static void print_prompt(void);
 static void handle_sigint(int);
 static char *prompt(char *, size_t);
-static void run_command(char **, size_t, int, int);
+static void run_command(struct command *);
 static void execute(char *);
 static void interpret(void);
 int main(int, char *[]);
@@ -59,49 +66,63 @@ handle_sigint(int signo) {
     }
 }
 
-/* precondition: cmdvect has len strings and is NULL terminated */
 static void
-run_command(char **cmdvect, size_t len, int outfd, int infd) {
-    size_t size;
+free_command(struct command *cmd) {
+
+    (void)close(cmd->infd);
+    (void)close(cmd->outfd);
+    free(cmd);
+}
+
+/* precondition: cmd is initialized and cmd->cmd is NULL terminated */
+static void
+run_command(struct command *cmd) {
+    size_t size, len;
     int wstatus;
 
-    is_executing = TRUE; /* toggle signal handler behavior */
-    if (strncmp(cmdvect[0], "exit", strlen(cmdvect[0])) == 0) {
-        exit(retcode);
+    is_executing = TRUE; // toggles signal handler behavior
+    if (strncmp(cmd->cmd[0], "exit", strlen(cmd->cmd[0])) == 0) {
+        len = cmd->len;
+        free_command(cmd);
+        exit(len > 1 ? EXIT_FAILURE : retcode);
     }
 
     switch (fork()) {
     case -1:
         err(EXIT_FAILURE, "fork");
     case 0:
-        if (outfd != -1 && dup2(outfd, STDOUT_FILENO) != STDOUT_FILENO) {
-            err(EXIT_FAILURE, "could not redirect standard output: dup2");
+        if (cmd->outfd != -1 &&
+            dup2(cmd->outfd, STDOUT_FILENO) != STDOUT_FILENO) {
+            err(EXIT_FAILURE, "could not redirect stdout: dup2");
         }
-        if (infd != -1 && dup2(infd, STDIN_FILENO) != STDIN_FILENO) {
-            err(EXIT_FAILURE, "could not redirect standard input: dup2");
-        }
-
-        size = strlen(cmdvect[0]);
-        if (strncmp(cmdvect[0], "cd", size) == 0) {
-            exit(cd(len, cmdvect));
-        } else if (strncmp(cmdvect[0], "echo", size) == 0) {
-            exit(echo(len, cmdvect, retcode));
+        if (cmd->infd != -1 &&
+            dup2(cmd->infd, STDIN_FILENO) != STDIN_FILENO) {
+            err(EXIT_FAILURE, "could not redirect stdin: dup2");
         }
 
-        (void)execvp(cmdvect[0], cmdvect);
+        size = strlen(cmd->cmd[0]);
+        if (strncmp(cmd->cmd[0], "cd", size) == 0) {
+            exit(cd(cmd->len, cmd->cmd));
+        } else if (strncmp(cmd->cmd[0], "echo", size) == 0) {
+            exit(echo(cmd->len, cmd->cmd, retcode));
+        }
+
+        (void)execvp(cmd->cmd[0], cmd->cmd);
+        free_command(cmd);
         if (errno == ENOENT) {
-            (void)fprintf(stderr, "%s: command not found\n", cmdvect[0]);
-            exit(ERR_NOT_EXECUTED);
+            errx(ERR_NOT_EXECUTED, "%s: command not found\n", cmd->cmd[0]);
         } else {
             err(ERR_NOT_EXECUTED, "execvp");
         }
     default:
-        (void)close(outfd);
-        (void)close(infd);
+        (void)close(cmd->outfd);
+        (void)close(cmd->infd);
         for (;;) {
             if (wait(&wstatus) == -1) {
+                free(cmd);
                 err(EXIT_FAILURE, "wait");
             }
+
             if (WIFSIGNALED(wstatus)) {
                 retcode = ERR_NOT_EXECUTED;
                 break;
@@ -115,29 +136,19 @@ run_command(char **cmdvect, size_t len, int outfd, int infd) {
     }
 }
 
-static void
-execute(char *command) {
-    char *tokens[MAX_TOKENS], *cmd[MAX_TOKENS];
+static struct command *
+parse_command(char **tokens, size_t len) {
+    struct command *cmd;
     char *token, *path;
-    size_t i, len, curr, toklen;
-    int outfd, infd, open_flags;
+    size_t i, curr, toklen;
+    int open_flags;
 
-    if (f_tracing_mode) {
-        (void)fprintf(stderr, "+");
-    }
-    token = strtok(command, COMMAND_DELIMS);
-    for (len = 0; token != NULL; ++len) {
-        if (f_tracing_mode) {
-            (void)fprintf(stderr, " %s", token);
-        }
-        tokens[len] = token;
-        token = strtok(NULL, COMMAND_DELIMS);
-    }
-    if (f_tracing_mode) {
-        (void)fprintf(stderr, "\n");
+    if ((cmd = (struct command *) malloc(sizeof(struct command))) == NULL) {
+        perror("parsing command: malloc");
+        return NULL;
     }
 
-    outfd = infd = -1;
+    cmd->infd = cmd->outfd = -1;
     for (i = 0, curr = 0; i < len; ++i) {
         token = tokens[i];
         toklen = strlen(token);
@@ -145,8 +156,8 @@ execute(char *command) {
         if (strnstr(token, ">>>", toklen) != NULL ||
             strnstr(token, "<<", toklen) != NULL) {
             (void)fprintf(stderr, "parse error: invalid combination of "
-                "redirection operators\n");
-            return;
+                "redirection operators");
+            return NULL;
         }
 
         path = NULL;
@@ -157,35 +168,70 @@ execute(char *command) {
             path = token + 1;
             open_flags = O_WRONLY | O_CREAT | O_TRUNC;
         } else if (strncmp(token, "<", 1) == 0) {
-            (void)close(infd);
-            if ((infd = open(token + 1, O_RDONLY)) == -1) {
-                perror("open");
-                return;
+            (void)close(cmd->infd);
+            if ((cmd->infd = open(token + 1, O_RDONLY)) == -1) {
+                perror("parsing command: open");
+                return NULL;
             }
-            continue;
+            continue; // TODO: don't continue if <> case
         }
 
         if (path != NULL) {
-            (void)close(outfd);
-            if ((outfd = open(path, open_flags,
+            (void)close(cmd->outfd);
+            if ((cmd->outfd = open(path, open_flags,
                 S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
-                perror("open");
-                return;
+                perror("parsing command: open");
+                return NULL;
             }
             continue;
         }
-
-        cmd[curr++] = token;
+        cmd->cmd[curr++] = token;
     }
 
     if (curr == 0) {
+        return NULL;
+    }
+    cmd->cmd[curr] = NULL; // for execvp
+    cmd->len = curr;
+    return cmd;
+}
+
+static void
+execute(char *command) {
+    struct command *cmd;
+    char *tokens[MAX_TOKENS];
+    char *token;
+    size_t len;
+
+    if ((token = strtok(command, COMMAND_DELIMS)) == NULL) {
         return;
     }
 
-    len = curr;
-    cmd[len] = NULL;
-    run_command(cmd, len, outfd, infd);
+    if (f_tracing_mode) {
+        (void)fprintf(stderr, "+");
+    }
+
+    for (len = 0; token != NULL; ++len) {
+        if (f_tracing_mode) {
+            (void)fprintf(stderr, " %s", token);
+        }
+        tokens[len] = token;
+        token = strtok(NULL, COMMAND_DELIMS);
+    }
+
+    if (f_tracing_mode) {
+        (void)fprintf(stderr, "\n");
+    }
+
+    if ((cmd = parse_command(tokens, len)) == NULL) {
+        retcode = EXIT_FAILURE;
+        return;
+    }
+
+    run_command(cmd);
+    free(cmd);
 }
+
 static char *
 prompt(char *buffer, size_t buffer_size) {
 
