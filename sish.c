@@ -41,6 +41,7 @@ static void print_prompt(void);
 static void handle_sigint(int);
 static char *prompt(char *, size_t);
 static void run_command(struct command *);
+static struct command *parse_command(char **, size_t);
 static void execute(char *);
 static void interpret(void);
 int main(int, char *[]);
